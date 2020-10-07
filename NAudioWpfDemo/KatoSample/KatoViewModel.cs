@@ -3,8 +3,8 @@ using NAudio.Wave;
 using NAudioWpfDemo.ViewModel;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Windows;
 
@@ -13,7 +13,8 @@ namespace NAudioWpfDemo.KatoSample
     internal class KatoViewModel : ViewModelBase, IDisposable
     {
         private MMDevice selectedDevice;
-        private WasapiCapture capture;
+        //private WasapiCapture capture;
+        private WaveInEvent capture;
         private int sampleRate;
         private int bitDepth;
         private int channelCount;
@@ -46,14 +47,22 @@ namespace NAudioWpfDemo.KatoSample
         {
             try
             {
+                capture = new WaveInEvent
+                {
+                    DeviceNumber = 0,
+                    WaveFormat = new WaveFormat(SampleRate, ChannelCount)
+                };
+                capture.RecordingStopped += OnRecordingStopped;
+                capture.DataAvailable += CaptureOnDataAvailable;
+                capture.StartRecording();
+
+                /*
                 capture = new WasapiCapture(SelectedDevice);
                 capture.ShareMode = ShareModeIndex == 0 ? AudioClientShareMode.Shared : AudioClientShareMode.Exclusive;
                 capture.WaveFormat =
                     SampleTypeIndex == 0 ? WaveFormat.CreateIeeeFloatWaveFormat(sampleRate, channelCount) :
                     new WaveFormat(sampleRate, bitDepth, channelCount);
-                capture.StartRecording();
-                capture.RecordingStopped += OnRecordingStopped;
-                capture.DataAvailable += CaptureOnDataAvailable;
+                */
                 RecordCommand.IsEnabled = false;
                 StopCommand.IsEnabled = true;
                 Message = "Recording...";
@@ -64,10 +73,11 @@ namespace NAudioWpfDemo.KatoSample
             }
         }
 
-        private void CaptureOnDataAvailable(object sender, WaveInEventArgs waveInEventArgs)
-        {
-        }
 
+        private void CaptureOnDataAvailable(object sender, WaveInEventArgs e)
+        {
+            Debug.WriteLine($"Got {e.BytesRecorded} bytes of audio data");
+        }
 
         void OnRecordingStopped(object sender, StoppedEventArgs e)
         {
