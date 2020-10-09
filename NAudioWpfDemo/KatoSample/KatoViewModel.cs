@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 
@@ -21,6 +22,8 @@ namespace NAudioWpfDemo.KatoSample
         private int sampleTypeIndex;
         private string message;
         private readonly SynchronizationContext synchronizationContext;
+        private Timer stopTimer;
+        private Random random;
 
         public DelegateCommand RecordCommand { get; }
         public DelegateCommand StopCommand { get; }
@@ -36,15 +39,29 @@ namespace NAudioWpfDemo.KatoSample
             SelectedDevice = CaptureDevices.FirstOrDefault(c => c.ID == defaultDevice.ID);
             RecordCommand = new DelegateCommand(Record);
             StopCommand = new DelegateCommand(Stop) { IsEnabled = false };
+            random = new Random();
         }
 
         private void Stop()
         {
             capture?.StopRecording();
+            capture?.Dispose();
+            //capture = null;
+        }
+
+        private void TimerFired(object state)
+        {
+            synchronizationContext.Post(s => { 
+                Stop();
+                stopTimer.Dispose();
+                Record();
+                stopTimer = new Timer(TimerFired, null, random.Next(500, 5000), Timeout.Infinite);
+            }, null);
         }
 
         private void Record()
         {
+            capture?.Dispose();
             try
             {
                 capture = new WaveInEvent
@@ -55,6 +72,8 @@ namespace NAudioWpfDemo.KatoSample
                 capture.RecordingStopped += OnRecordingStopped;
                 capture.DataAvailable += CaptureOnDataAvailable;
                 capture.StartRecording();
+
+                stopTimer = new Timer(TimerFired, null, random.Next(500, 5000), Timeout.Infinite);
 
                 /*
                 capture = new WasapiCapture(SelectedDevice);
@@ -85,8 +104,8 @@ namespace NAudioWpfDemo.KatoSample
                 Message = "Recording Stopped";
             else
                 Message = "Recording Error: " + e.Exception.Message;
-            capture.Dispose();
-            capture = null;
+            //capture.Dispose();
+            //capture = null;
             RecordCommand.IsEnabled = true;
             StopCommand.IsEnabled = false;
         }
