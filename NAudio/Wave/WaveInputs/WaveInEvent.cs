@@ -19,6 +19,7 @@ namespace NAudio.Wave
         private IntPtr waveInHandle;
         private volatile CaptureState captureState;
         private WaveInBuffer[] buffers;
+        private bool disposed = false;
 
         /// <summary>
         /// Indicates recorded data is available 
@@ -108,12 +109,15 @@ namespace NAudio.Wave
         /// </summary>
         public void StartRecording()
         {
-            if (captureState != CaptureState.Stopped)
-                throw new InvalidOperationException("Already recording");
-            OpenWaveInDevice();
-            MmException.Try(WaveInterop.waveInStart(waveInHandle), "waveInStart");
-            captureState = CaptureState.Starting;
-            ThreadPool.QueueUserWorkItem((state) => RecordThread(), null);
+            lock (this)
+            {
+                if (captureState != CaptureState.Stopped)
+                    throw new InvalidOperationException("Already recording");
+                OpenWaveInDevice();
+                MmException.Try(WaveInterop.waveInStart(waveInHandle), "waveInStart");
+                captureState = CaptureState.Starting;
+                ThreadPool.QueueUserWorkItem((state) => RecordThread(), null);
+            }
         }
 
         private void RecordThread()
@@ -136,31 +140,43 @@ namespace NAudio.Wave
 
         private void DoRecording()
         {
-            captureState = CaptureState.Capturing;
-            foreach (var buffer in buffers)
+            lock (this)
             {
-                if (!buffer.InQueue)
+                if (!disposed && buffers != null)
                 {
-                    buffer.Reuse();
+                    captureState = CaptureState.Capturing;
+                    foreach (var buffer in buffers)
+                    {
+                        if (!buffer.InQueue)
+                        {
+                            buffer.Reuse();
+                        }
+                    }
                 }
             }
             while (captureState == CaptureState.Capturing)
             {
                 if (callbackEvent.WaitOne())
                 {
-                    // requeue any buffers returned to us
-                    foreach (var buffer in buffers)
+                    lock (this)
                     {
-                        if (buffer.Done)
+                        // requeue any buffers returned to us
+                        if (!disposed && buffers != null)
                         {
-                            if (buffer.BytesRecorded > 0)
+                            foreach (var buffer in buffers)
                             {
-                                DataAvailable?.Invoke(this, new WaveInEventArgs(buffer.Data, buffer.BytesRecorded));
-                            }
+                                if (buffer.Done)
+                                {
+                                    if (buffer.BytesRecorded > 0)
+                                    {
+                                        DataAvailable?.Invoke(this, new WaveInEventArgs(buffer.Data, buffer.BytesRecorded));
+                                    }
 
-                            if (captureState == CaptureState.Capturing)
-                            {
-                                buffer.Reuse();
+                                    if (captureState == CaptureState.Capturing)
+                                    {
+                                        buffer.Reuse();
+                                    }
+                                }
                             }
                         }
                     }
@@ -188,15 +204,24 @@ namespace NAudio.Wave
         /// </summary>
         public void StopRecording()
         {
-            if (captureState != CaptureState.Stopped)
+            lock (this)
             {
-                captureState = CaptureState.Stopping;
-                MmException.Try(WaveInterop.waveInStop(waveInHandle), "waveInStop");
+                if (captureState != CaptureState.Stopped)
+                {
+                    captureState = CaptureState.Stopping;
+                    if (waveInHandle != IntPtr.Zero)
+                    {
+                        MmException.Try(WaveInterop.waveInStop(waveInHandle), "waveInStop");
+                    }
 
-                //Reset, triggering the buffers to be returned
-                MmException.Try(WaveInterop.waveInReset(waveInHandle), "waveInReset");
+                    //Reset, triggering the buffers to be returned
+                    if (waveInHandle != IntPtr.Zero)
+                    {
+                        MmException.Try(WaveInterop.waveInReset(waveInHandle), "waveInReset");
+                    }
 
-                callbackEvent.Set(); // signal the thread to exit
+                    callbackEvent.Set(); // signal the thread to exit
+                }
             }
         }
 
@@ -229,10 +254,15 @@ namespace NAudio.Wave
         {
             if (disposing)
             {
-                if (captureState != CaptureState.Stopped)
-                    StopRecording();
+                lock (this)
+                {
+                    disposed = true;
 
-                CloseWaveInDevice();
+                    if (captureState != CaptureState.Stopped)
+                        StopRecording();
+
+                    CloseWaveInDevice();
+                }
             }
         }
 

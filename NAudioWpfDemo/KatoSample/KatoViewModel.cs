@@ -55,7 +55,7 @@ namespace NAudioWpfDemo.KatoSample
                 Stop();
                 stopTimer.Dispose();
                 Record();
-                stopTimer = new Timer(TimerFired, null, random.Next(500, 5000), Timeout.Infinite);
+                stopTimer = new Timer(TimerFired, null, random.Next(200, 1000), Timeout.Infinite);
             }, null);
         }
 
@@ -73,7 +73,7 @@ namespace NAudioWpfDemo.KatoSample
                 capture.DataAvailable += CaptureOnDataAvailable;
                 capture.StartRecording();
 
-                stopTimer = new Timer(TimerFired, null, random.Next(500, 5000), Timeout.Infinite);
+                stopTimer = new Timer(TimerFired, null, random.Next(200, 1000), Timeout.Infinite);
 
                 /*
                 capture = new WasapiCapture(SelectedDevice);
